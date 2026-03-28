@@ -342,7 +342,7 @@ export default function Chatbot() {
         const assistantMessage: Message = {
           id: messages.length + 1,
           role: 'assistant',
-          content: data.message || '',
+          content: data.response || data.message || '',
           timestamp: new Date()
         }
         setMessages(prev => [...prev, assistantMessage])
