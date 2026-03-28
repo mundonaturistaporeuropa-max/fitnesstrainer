@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 
@@ -32,46 +33,45 @@ const EXERCISES_SEED = [
   { name: 'Giro Ruso', muscle_group: 'Abdomen', equipment: 'Sin equipo', difficulty: 'Intermedio', description: 'Trabaja los oblicuos.' },
 ]
 
-function getDbConnection() {
-  const databaseUrl = process.env.DATABASE_URL
-  if (!databaseUrl) {
-    throw new Error('DATABASE_URL is not set')
-  }
-  return neon(databaseUrl)
-}
-
-async function initializeDb(sql: ReturnType<typeof neon>) {
-  await sql`
-    CREATE TABLE IF NOT EXISTS exercises (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      muscle_group VARCHAR(100) NOT NULL,
-      equipment VARCHAR(100) NOT NULL,
-      difficulty VARCHAR(50) NOT NULL,
-      description TEXT,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-  `
-
-  const countResult = await sql`SELECT COUNT(*) as count FROM exercises`
-  const rows = countResult as Array<{ count: string }>
-  if (parseInt(rows[0].count) === 0) {
-    for (const exercise of EXERCISES_SEED) {
-      await sql`
-        INSERT INTO exercises (name, muscle_group, equipment, difficulty, description)
-        VALUES (${exercise.name}, ${exercise.muscle_group}, ${exercise.equipment}, ${exercise.difficulty}, ${exercise.description})
-      `
-    }
-  }
-}
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const muscle = searchParams.get('muscle')
-    const sql = getDbConnection()
-    await initializeDb(sql)
+    
+    const databaseUrl = process.env.DATABASE_URL
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL is not set')
+    }
+    
+    const sql = neon(databaseUrl) as any
 
+    // Create table if not exists
+    await sql`
+      CREATE TABLE IF NOT EXISTS exercises (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        muscle_group VARCHAR(100) NOT NULL,
+        equipment VARCHAR(100) NOT NULL,
+        difficulty VARCHAR(50) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `
+
+    // Seed data if empty
+    const countResult = await sql`SELECT COUNT(*) as count FROM exercises`
+    const currentCount = parseInt(countResult[0]?.count ?? '0')
+    
+    if (currentCount === 0) {
+      for (const exercise of EXERCISES_SEED) {
+        await sql`
+          INSERT INTO exercises (name, muscle_group, equipment, difficulty, description)
+          VALUES (${exercise.name}, ${exercise.muscle_group}, ${exercise.equipment}, ${exercise.difficulty}, ${exercise.description})
+        `
+      }
+    }
+
+    // Query exercises
     let exercises
     if (muscle && muscle !== 'Todos') {
       exercises = await sql`
@@ -98,7 +98,13 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     const { name, muscle_group, equipment, difficulty, description } = body
-    const sql = getDbConnection()
+    
+    const databaseUrl = process.env.DATABASE_URL
+    if (!databaseUrl) {
+      throw new Error('DATABASE_URL is not set')
+    }
+    
+    const sql = neon(databaseUrl) as any
 
     const result = await sql`
       INSERT INTO exercises (name, muscle_group, equipment, difficulty, description)
@@ -106,8 +112,7 @@ export async function POST(request: Request) {
       RETURNING *
     `
 
-    const rows = result as Array<Record<string, unknown>>
-    return NextResponse.json({ exercise: rows[0] }, { status: 201 })
+    return NextResponse.json({ exercise: result[0] }, { status: 201 })
   } catch (error) {
     console.error('Database error:', error)
     return NextResponse.json({ error: 'Failed to create exercise' }, { status: 500 })
