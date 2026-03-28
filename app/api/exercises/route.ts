@@ -32,7 +32,7 @@ const EXERCISES_SEED = [
   { name: 'Giro Ruso', muscle_group: 'Abdomen', equipment: 'Sin equipo', difficulty: 'Intermedio', description: 'Trabaja los oblicuos.' },
 ]
 
-async function getDbConnection() {
+function getDbConnection() {
   const databaseUrl = process.env.DATABASE_URL
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is not set')
@@ -52,9 +52,10 @@ async function initializeDb(sql: ReturnType<typeof neon>) {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `
-  
-  const count = await sql`SELECT COUNT(*) FROM exercises`
-  if (parseInt(count[0].count) === 0) {
+
+  const countResult = await sql`SELECT COUNT(*) as count FROM exercises`
+  const rows = countResult as Array<{ count: string }>
+  if (parseInt(rows[0].count) === 0) {
     for (const exercise of EXERCISES_SEED) {
       await sql`
         INSERT INTO exercises (name, muscle_group, equipment, difficulty, description)
@@ -68,10 +69,9 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const muscle = searchParams.get('muscle')
-    
-    const sql = await getDbConnection()
+    const sql = getDbConnection()
     await initializeDb(sql)
-    
+
     let exercises
     if (muscle && muscle !== 'Todos') {
       exercises = await sql`
@@ -82,12 +82,12 @@ export async function GET(request: Request) {
         SELECT * FROM exercises ORDER BY muscle_group, name
       `
     }
-    
+
     return NextResponse.json({ exercises })
   } catch (error) {
     console.error('Database error:', error)
     // Return fallback data if database is not available
-    return NextResponse.json({ 
+    return NextResponse.json({
       exercises: EXERCISES_SEED,
       note: 'Using local data - database not configured'
     })
@@ -98,15 +98,16 @@ export async function POST(request: Request) {
   try {
     const body = await request.json()
     const { name, muscle_group, equipment, difficulty, description } = body
-    
-    const sql = await getDbConnection()
+    const sql = getDbConnection()
+
     const result = await sql`
       INSERT INTO exercises (name, muscle_group, equipment, difficulty, description)
       VALUES (${name}, ${muscle_group}, ${equipment}, ${difficulty}, ${description})
       RETURNING *
     `
-    
-    return NextResponse.json({ exercise: result[0] }, { status: 201 })
+
+    const rows = result as Array<Record<string, unknown>>
+    return NextResponse.json({ exercise: rows[0] }, { status: 201 })
   } catch (error) {
     console.error('Database error:', error)
     return NextResponse.json({ error: 'Failed to create exercise' }, { status: 500 })
